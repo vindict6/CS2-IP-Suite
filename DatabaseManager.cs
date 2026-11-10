@@ -11,7 +11,7 @@ namespace CS2IPSuite;
 /// <summary>
 /// Owns all DB I/O for CS2-IP-Suite. The DB file lives in the plugin's
 /// configs folder (auto-created) and stores:
-///   - players: every (steamid, ip) pair we have ever seen, with last-seen.
+///   - players: every (steamid, ip) pair ever seen, with last-seen.
 ///   - bans:    historical and active ban entries keyed by IP.
 ///
 /// An <see cref="ActiveBans"/> dictionary mirrors the active rows so that
@@ -39,9 +39,7 @@ public sealed class DatabaseManager : IDisposable
         _logger = logger;
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Init / schema
-    // ──────────────────────────────────────────────────────────────────
+    // Init / schema
 
     public void Initialize()
     {
@@ -85,7 +83,7 @@ public sealed class DatabaseManager : IDisposable
     {
         var c = new SqliteConnection(_connStr);
         c.Open();
-        // WAL gives much better concurrency for our read-heavy workload.
+        // WAL lets readers run alongside writes, which suits this read-heavy workload.
         using var pragma = c.CreateCommand();
         pragma.CommandText = "PRAGMA journal_mode=WAL;";
         pragma.ExecuteNonQuery();
@@ -99,9 +97,7 @@ public sealed class DatabaseManager : IDisposable
         cmd.ExecuteNonQuery();
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Players
-    // ──────────────────────────────────────────────────────────────────
+    // Players
 
     public Task RecordPlayerAsync(PlayerInfo p) => Task.Run(() => RecordPlayer(p));
 
@@ -227,9 +223,7 @@ public sealed class DatabaseManager : IDisposable
         return list;
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Bans
-    // ──────────────────────────────────────────────────────────────────
+    // Bans
 
     public void ReloadActiveBansToMemory()
     {
@@ -282,7 +276,7 @@ public sealed class DatabaseManager : IDisposable
         {
             using var c = Open();
 
-            // De-activate any prior active rows for this IP so we don't pile up.
+            // Deactivate earlier active rows so each IP has at most one active ban.
             using (var deactivate = c.CreateCommand())
             {
                 deactivate.CommandText =
@@ -377,7 +371,7 @@ public sealed class DatabaseManager : IDisposable
 
     public void Dispose()
     {
-        // Force pool clear so the file handle is released for hot reload.
+        // Clear the connection pool so the file handle is released for hot reload.
         SqliteConnection.ClearAllPools();
     }
 }

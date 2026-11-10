@@ -24,14 +24,12 @@ using Timer = CounterStrikeSharp.API.Modules.Timers.Timer;
 namespace CS2IPSuite;
 
 /// <summary>
-/// CS2-IP-Suite — comprehensive IP-based ban/unban + WHOIS lookup tool.
-/// All chat input AND output for admin commands is hidden from public chat.
+/// CS2-IP-Suite: IP-based ban/unban with WHOIS lookup and alt-account detection.
+/// Admin commands typed in chat, and their replies, are hidden from public chat.
 /// </summary>
 public sealed class CS2IPSuitePlugin : BasePlugin
 {
-    // ──────────────────────────────────────────────────────────────────
-    //  Metadata
-    // ──────────────────────────────────────────────────────────────────
+    // Metadata
     public override string ModuleName        => "CS2-IP-Suite";
     public override string ModuleVersion     => "1.0.0";
     public override string ModuleAuthor      => "BONE";
@@ -40,9 +38,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
     /// <summary>Permission flag required to use any command in this plugin.</summary>
     public const string AdminFlag = "@css/ban";
 
-    // ──────────────────────────────────────────────────────────────────
-    //  State
-    // ──────────────────────────────────────────────────────────────────
+    // State
     private DatabaseManager  _db       = null!;
     private IPLookupService  _lookup   = null!;
 
@@ -54,9 +50,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
 
     private Timer? _expiryTimer;
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Lifecycle
-    // ──────────────────────────────────────────────────────────────────
+    // Lifecycle
     public override void Load(bool hotReload)
     {
         // configs/plugins/CS2-IP-Suite/ipsuite.db
@@ -71,7 +65,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
 
         _lookup = new IPLookupService(Logger);
 
-        // Chat interception so we can hide commands and confirmations.
+        // Intercept chat so plugin commands and confirmations stay hidden.
         AddCommandListener("say",      OnPlayerSay, HookMode.Pre);
         AddCommandListener("say_team", OnPlayerSay, HookMode.Pre);
 
@@ -82,7 +76,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         // Sweep expired bans every 30 s.
         _expiryTimer = AddTimer(30.0f, SweepExpiredBans, TimerFlags.REPEAT);
 
-        // On hot reload: re-populate _current from whoever is on the server.
+        // On hot reload, rebuild _current from the players already on the server.
         if (hotReload)
         {
             foreach (var p in Utilities.GetPlayers())
@@ -125,9 +119,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         Logger.LogInformation("[CS2-IP-Suite] Unloaded. (hot reload: {hr})", hotReload);
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Player tracking + IP-ban enforcement
-    // ──────────────────────────────────────────────────────────────────
+    // Player tracking + IP-ban enforcement
     private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo info)
     {
         var p = @event.Userid;
@@ -175,14 +167,11 @@ public sealed class CS2IPSuitePlugin : BasePlugin
 
     private void OnClientDisconnect(int slot)
     {
-        // Remove from in-memory list.
         var entry = _current.FirstOrDefault(kv => kv.Value.Slot == slot);
         if (entry.Key != 0) _current.TryRemove(entry.Key, out _);
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Chat interception (hides every command and confirmation)
-    // ──────────────────────────────────────────────────────────────────
+    // Chat interception (hides every command and confirmation)
     private HookResult OnPlayerSay(CCSPlayerController? player, CommandInfo info)
     {
         if (player == null || !player.IsValid || player.IsBot) return HookResult.Continue;
@@ -199,22 +188,22 @@ public sealed class CS2IPSuitePlugin : BasePlugin
 
         var sid = player.AuthorizedSteamID?.SteamId64 ?? 0UL;
 
-        // 1) Confirmation reply only counts when this admin has a pending action.
+        // A yes/no reply only counts when this admin has a pending action.
         if ((firstWord == "yes" || firstWord == "no") && sid != 0
             && _pending.ContainsKey(sid)
             && (noBang.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
                 noBang.Equals("no",  StringComparison.OrdinalIgnoreCase)))
         {
-            // Echo back so admin sees what they typed (it's hidden from everyone else).
+            // Echo the input back to the admin, since it's hidden from everyone else.
             player.PrintToChat(ChatHelper.Echo(trimmed));
             HandleConfirmation(player, noBang.ToLowerInvariant());
             return HookResult.Stop;
         }
 
-        // 2) Plugin commands.
+        // Plugin commands.
         if (firstWord == "ipban" || firstWord == "ipunban" || firstWord == "ipsearch")
         {
-            // Always hide it; even non-admin probes should not leak to public chat.
+            // Always hide the command, so attempts by non-admins don't show in public chat either.
             player.PrintToChat(ChatHelper.Echo(trimmed));
 
             if (!AdminManager.PlayerHasPermissions(player, AdminFlag))
@@ -230,18 +219,16 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         return HookResult.Continue;
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Console-side commands (server console, rcon, host console)
-    //  Players in-game cannot reach these because chat is intercepted
-    //  above, so these are mainly for the dedicated-server console.
-    // ──────────────────────────────────────────────────────────────────
+    // Console commands (server console, rcon, host console). Chat input from
+    // players is intercepted in OnPlayerSay, so these mainly serve the
+    // dedicated-server console.
     [ConsoleCommand("ipban", "Ban a player by name, IP, or SteamID64 for N minutes.")]
     [CommandHelper(minArgs: 0, usage: "<name|ip|id> <value...> <minutes>", whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
     [RequiresPermissions(AdminFlag)]
     public void OnIpBanConsole(CCSPlayerController? player, CommandInfo info)
     {
-        // If this came from chat (which we route through OnPlayerSay), ignore;
-        // OnPlayerSay already handled it. Console-only path proceeds.
+        // Chat input is handled and stopped in OnPlayerSay, so this is normally
+        // reached from the console.
         DispatchPluginCommand(player, "ipban " + info.ArgString);
     }
 
@@ -261,7 +248,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         DispatchPluginCommand(player, "ipsearch " + info.ArgString);
     }
 
-    // yes / no confirmations also accepted as plain console commands.
+    // yes / no confirmations are also accepted as plain console commands.
     [ConsoleCommand("yes", "Confirm a queued IP-Suite action.")]
     [CommandHelper(minArgs: 0, whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
     [RequiresPermissions(AdminFlag)]
@@ -284,9 +271,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         HandleConfirmation(player, "no");
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Command dispatch
-    // ──────────────────────────────────────────────────────────────────
+    // Command dispatch
     private void DispatchPluginCommand(CCSPlayerController? admin, string fullText)
     {
         var args = SplitArgs(fullText);
@@ -301,9 +286,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  ipban
-    // ──────────────────────────────────────────────────────────────────
+    // ipban
     private void ProcessIpBan(CCSPlayerController? admin, string[] args)
     {
         // args[0]=ipban, args[1]=name|ip|id, args[2..n-2]=value, args[n-1]=minutes
@@ -397,7 +380,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             return;
         }
 
-        // Prefer the live IP if they're online; else fall back to most-recent DB row.
+        // Prefer the live IP if they're online, otherwise the most recent DB row.
         string? ip = null;
         string  who = sid.ToString();
 
@@ -422,7 +405,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             return;
         }
 
-        // Per spec: ipban id does not require yes/no confirmation. Apply directly.
+        // Bans by SteamID are applied immediately, without a yes/no confirmation.
         var ban = _db.AddBan(ip, minutes, AdminName(admin));
         KickIfOnline(ip);
 
@@ -436,9 +419,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             AdminName(admin), who, ip, minutes);
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  ipunban
-    // ──────────────────────────────────────────────────────────────────
+    // ipunban
     private void ProcessIpUnban(CCSPlayerController? admin, string[] args)
     {
         if (args.Length < 3)
@@ -522,7 +503,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             return;
         }
 
-        // Group by SteamID — we want one entry per distinct user.
+        // Group by SteamID to get one entry per distinct user.
         var byUser = rows.GroupBy(r => r.SteamId).ToList();
 
         if (byUser.Count > 1)
@@ -541,7 +522,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             return;
         }
 
-        // Single user matched — collect all banned IPs across all their records.
+        // Single user matched: collect the banned IPs across all their records.
         var user = byUser[0];
         var bannedIps = user.Select(r => r.IpAddress).Distinct()
                             .Where(_db.IsIpBanned).ToArray();
@@ -561,13 +542,11 @@ public sealed class CS2IPSuitePlugin : BasePlugin
                      $" ({ChatColors.Yellow}{user.Key}{ChatColors.Default}) — {listText}");
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Confirmation queue
-    // ──────────────────────────────────────────────────────────────────
+    // Confirmation queue
     private void QueueBanConfirmation(
         CCSPlayerController? admin, IEnumerable<string> ips, int minutes, string display)
     {
-        if (admin == null) return;       // server console: should never reach here
+        if (admin == null) return;       // the server console never queues a confirmation
         var sid = admin.AuthorizedSteamID?.SteamId64 ?? 0UL;
         if (sid == 0)
         {
@@ -664,9 +643,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  ipsearch  (WHOIS + alt accounts)
-    // ──────────────────────────────────────────────────────────────────
+    // ipsearch  (WHOIS + alt accounts)
     private void ProcessIpSearch(CCSPlayerController? admin, string[] args)
     {
         if (args.Length < 2)
@@ -686,9 +663,9 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         Send(admin, ChatHelper.Header($"IP Search: {ip}"));
 
         var dbRows = _db.GetPlayersByIp(ip);
-        var capturedAdmin = admin;       // reference is safe to capture; we re-validate later.
+        var capturedAdmin = admin;       // safe to capture; RenderIpSearch re-validates it
 
-        // Async lookup; marshal back to the game thread for chat output.
+        // Look up asynchronously, then marshal back to the game thread for chat output.
         Task.Run(async () =>
         {
             var info = await _lookup.LookupAsync(ip).ConfigureAwait(false);
@@ -802,15 +779,13 @@ public sealed class CS2IPSuitePlugin : BasePlugin
             Send(admin, ChatHelper.Info($"...and {unique.Count - 10} more."));
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  30-second sweep
-    // ──────────────────────────────────────────────────────────────────
+    // Expired-ban sweep (every 30 seconds)
     private void SweepExpiredBans()
     {
         try
         {
             var expired = _db.ExpireDueBans();
-            // Also drop any pending confirmations that are stale.
+            // Drop pending confirmations that have expired.
             foreach (var kv in _pending)
                 if (kv.Value.IsExpired)
                     _pending.TryRemove(kv.Key, out _);
@@ -826,9 +801,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    //  Helpers
-    // ──────────────────────────────────────────────────────────────────
+    // Helpers
     private void KickIfOnline(string ip)
     {
         var matches = _current.Values.Where(p => p.IpAddress == ip).ToList();
@@ -856,7 +829,7 @@ public sealed class CS2IPSuitePlugin : BasePlugin
         }
         else
         {
-            // Server console — strip color bytes for readability.
+            // Server console: strip color bytes for readability.
             Server.PrintToConsole(ChatHelper.StripColors(line));
         }
     }
